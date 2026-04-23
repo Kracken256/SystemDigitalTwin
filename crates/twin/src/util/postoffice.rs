@@ -27,27 +27,9 @@ impl<T: Into<String>> From<T> for SignalId {
     }
 }
 
-pub trait CloneAny: Any {
-    fn clone_box(&self) -> Box<dyn CloneAny>;
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
-
-impl<T: Any + Clone + 'static> CloneAny for T {
-    fn clone_box(&self) -> Box<dyn CloneAny> {
-        Box::new(self.clone())
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
 pub struct PostOffice {
-    current: HashMap<SignalId, Box<dyn CloneAny>>,
-    next: HashMap<SignalId, Box<dyn CloneAny>>,
+    current: HashMap<SignalId, Box<dyn Any>>,
+    next: HashMap<SignalId, Box<dyn Any>>,
     registry: HashMap<SignalId, TypeId>,
 }
 
@@ -64,36 +46,44 @@ impl PostOffice {
         self.registry.insert(id, TypeId::of::<T>());
     }
 
-    pub fn read<T: 'static>(&self, id: SignalId) -> Option<&T> {
-        let boxed = self.current.get(&id)?;
-        (**boxed).as_any().downcast_ref::<T>()
+    fn assert_type_match<T: 'static>(&self, id: SignalId) {
+        if let Some(&expected_type) = self.registry.get(&id) {
+            if expected_type != TypeId::of::<T>() {
+                panic!(
+                    "Type mismatch for signal {:?}: expected {:?}, got {:?}",
+                    id,
+                    expected_type,
+                    TypeId::of::<T>()
+                );
+            }
+        } else {
+            panic!("Signal {:?} not registered", id);
+        }
     }
 
-    pub fn deliver_mail<T: 'static + Clone>(&mut self, id: SignalId, value: T) {
-        self.write(id, value);
+    pub fn read<T: 'static>(&self, id: SignalId) -> Option<&T> {
+        self.assert_type_match::<T>(id);
+        self.current.get(&id)?.downcast_ref::<T>()
     }
 
     pub fn write<T: 'static + Clone>(&mut self, id: SignalId, value: T) {
-        if let Some(&expected_type) = self.registry.get(&id) {
-            if TypeId::of::<T>() == expected_type {
-                self.next.insert(id, Box::new(value));
-            } else {
-                panic!("Type mismatch for signal {:?}", id);
-            }
-        }
+        self.assert_type_match::<T>(id);
+        self.next.insert(id, Box::new(value));
     }
 
     pub fn accumulate<T>(&mut self, id: SignalId, value: T)
     where
         T: 'static + AddAssign + Clone + Default,
     {
-        if let Some(existing_any) = self.next.get_mut(&id) {
-            if let Some(existing_val) = (**existing_any).as_any_mut().downcast_mut::<T>() {
-                *existing_val += value;
-            }
-        } else {
-            self.write(id, value);
-        }
+        self.assert_type_match::<T>(id);
+
+        self.next
+            .entry(id)
+            .and_modify(|existing_any| {
+                let existing_val = (**existing_any).downcast_mut::<T>().unwrap();
+                *existing_val += value.clone();
+            })
+            .or_insert_with(|| Box::new(value));
     }
 
     pub fn clear_accumulator<T: 'static + Clone + Default>(&mut self, id: SignalId) {
@@ -101,15 +91,7 @@ impl PostOffice {
     }
 
     pub fn flip(&mut self) {
-        // 1. Move computed 'next' to 'current'
-        self.current = std::mem::take(&mut self.next);
-
-        // 2. Clone 'current' back to 'next' for persistence
-        let mut persistent_next = HashMap::new();
-        for (id, val) in self.current.iter() {
-            // (**val) reaches the dyn CloneAny trait object
-            persistent_next.insert(*id, (**val).clone_box());
-        }
-        self.next = persistent_next;
+        std::mem::swap(&mut self.current, &mut self.next);
+        self.next.clear();
     }
 }
