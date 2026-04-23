@@ -3,11 +3,11 @@ mod util;
 
 use crate::subsystems::prelude::*;
 pub use subsystems::*;
-use uom::si::f64::Time;
+use uom::si::{electric_current::ElectricCurrent, f64::Time};
 pub use util::prelude::*;
 
 pub struct System {
-    post_office: PostOffice,
+    po: PostOffice,
     env: SystemEnvironment,
 
     battery: BatterySubsystem,
@@ -15,20 +15,24 @@ pub struct System {
 
 impl System {
     pub fn new(env: SystemEnvironment) -> Self {
-        let mut post_office = PostOffice::new();
-        let battery = BatterySubsystem::new(&mut post_office);
+        let mut po = PostOffice::new();
 
-        Self {
-            post_office,
-            env,
-            battery,
-        }
+        let load = SignalId("battery_current_demand");
+        po.register_current(load);
+        po.write_current(
+            load,
+            ElectricCurrent::new::<uom::si::electric_current::ampere>(1.0),
+        );
+
+        let battery = BatterySubsystem::new(&mut po);
+
+        Self { po, env, battery }
     }
 
     pub fn step(&mut self, dt: Time) {
-        self.battery.step(&mut self.post_office, &self.env, dt);
+        self.battery.step(&mut self.po, &self.env, dt);
 
-        self.post_office.deliver_mail();
+        self.po.deliver_mail();
     }
 
     pub fn report_state(&self) -> serde_json::Value {
