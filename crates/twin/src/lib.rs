@@ -7,12 +7,14 @@ pub use util::prelude::*;
 
 pub struct System {
     post_office: PostOffice,
+    environment: SystemEnvironment,
 }
 
 impl System {
-    pub fn new() -> Self {
+    pub fn new(env: SystemEnvironment) -> Self {
         Self {
             post_office: PostOffice::new(),
+            environment: env,
         }
     }
 
