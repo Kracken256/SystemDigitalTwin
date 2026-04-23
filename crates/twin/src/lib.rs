@@ -1,12 +1,12 @@
+mod components;
 mod subsystems;
 mod util;
 
-use crate::subsystems::prelude::*;
+use crate::{components::prelude::*, subsystems::prelude::*};
 pub use subsystems::*;
 use uom::si::{
-    electric_potential::volt,
     electrical_resistance::ohm,
-    f64::{ElectricPotential, ElectricalResistance, Time},
+    f64::{ElectricalResistance, Time},
 };
 pub use util::prelude::*;
 
@@ -15,7 +15,7 @@ pub struct System {
     env: SystemEnvironment,
 
     battery: BatterySubsystem,
-    resistor: ResistorSubsystem,
+    resistor: Resistor,
 }
 
 impl System {
@@ -23,14 +23,14 @@ impl System {
         let mut po = PostOffice::new();
 
         let battery = BatterySubsystem::new(&mut po);
-        let resistor = ResistorSubsystem::new(
+        let resistor = Resistor::new(
             &mut po,
-            ResistorConfig {
-                resistance: ElectricalResistance::new::<ohm>(150.0),
-                forward_voltage: ElectricPotential::new::<volt>(2.0),
-                voltage_input: SignalId::from("battery_voltage"),
-                voltage_output: SignalId::from("led_terminal_voltage"),
-            },
+            ResistorConfig::standard(
+                "R1",
+                ElectricalResistance::new::<ohm>(150.0),
+                SignalId::from("battery_voltage"),
+                SignalId::from("battery_current_demand"),
+            ),
         );
 
         Self {
