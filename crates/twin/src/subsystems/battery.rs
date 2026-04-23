@@ -1,9 +1,9 @@
 use crate::{PostOffice, SignalId, Subsystem, SystemEnvironment};
 use uom::si::f64::*;
 use uom::si::{
-    ISQ, Quantity, SI, electric_potential::volt, electrical_resistance::ohm, energy::joule,
-    power::watt, temperature_interval, thermodynamic_temperature,
-    thermodynamic_temperature::degree_celsius,
+    ISQ, Quantity, SI, electric_current::ampere, electric_potential::volt,
+    electrical_resistance::ohm, energy::joule, power::watt, temperature_interval,
+    thermodynamic_temperature, thermodynamic_temperature::degree_celsius,
 };
 use uom::typenum::{N1, N3, P1, P2, Z0};
 
@@ -40,12 +40,13 @@ impl BatterySubsystem {
             max_voltage: ElectricPotential::new::<volt>(4.2),
         };
 
-        let voltage_id = SignalId("battery_voltage");
-        let current_id = SignalId("battery_current_demand");
-        let temperature_id = SignalId("battery_temperature");
+        let voltage_id = SignalId::from("battery_voltage");
+        let current_id = SignalId::from("battery_current_demand");
+        let temperature_id = SignalId::from("battery_temperature");
 
-        po.register_voltage(voltage_id);
-        po.register_temperature(temperature_id);
+        po.register::<ElectricPotential>(voltage_id);
+        po.register::<ElectricCurrent>(current_id);
+        po.register::<ThermodynamicTemperature>(temperature_id);
 
         Self {
             charge_level: spec.max_energy,
@@ -68,9 +69,11 @@ impl BatterySubsystem {
 }
 
 impl Subsystem for BatterySubsystem {
-    fn step(&mut self, po: &PostOffice, env: &SystemEnvironment, dt: Time) {
+    fn step(&mut self, po: &mut PostOffice, env: &SystemEnvironment, dt: Time) {
         // 1. Get the current demand from the system
-        let current_draw = po.read_current(self.current_load_input).unwrap();
+        let current_draw = *po
+            .read::<ElectricCurrent>(self.current_load_input)
+            .unwrap_or(&ElectricCurrent::new::<ampere>(0.0));
 
         // 2. Calculate Voltage and Power
         let open_circuit_voltage = self.calculate_voltage();
@@ -105,8 +108,9 @@ impl Subsystem for BatterySubsystem {
         self.surface_temperature += temp_change;
 
         // 5. Update PostOffice
-        po.write_voltage(self.voltage_output, terminal_voltage);
-        po.write_temperature(self.temperature_output, self.surface_temperature);
+        po.write::<ElectricPotential>(self.voltage_output, terminal_voltage);
+        po.write::<ThermodynamicTemperature>(self.temperature_output, self.surface_temperature);
+        po.clear_accumulator::<ElectricCurrent>(self.current_load_input);
     }
 
     fn report_state(&self) -> serde_json::Value {

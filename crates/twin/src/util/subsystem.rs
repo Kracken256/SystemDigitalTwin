@@ -8,6 +8,6 @@ pub struct SystemEnvironment {
 }
 
 pub trait Subsystem {
-    fn step(&mut self, po: &PostOffice, env: &SystemEnvironment, dt: Time);
+    fn step(&mut self, po: &mut PostOffice, env: &SystemEnvironment, dt: Time);
     fn report_state(&self) -> serde_json::Value;
 }
